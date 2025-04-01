@@ -952,8 +952,8 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 	return true
 }
 
-func failWantMap() {
-	failf("map merge requires map or sequence of maps as the value")
+func failWantMap(n *Node) {
+	failf("line %d: map merge requires map or sequence of maps as the value", n.Line)
 }
 
 func (d *decoder) merge(parent *Node, merge *Node, out reflect.Value) {
@@ -973,7 +973,7 @@ func (d *decoder) merge(parent *Node, merge *Node, out reflect.Value) {
 		d.unmarshal(merge, out)
 	case AliasNode:
 		if merge.Alias != nil && merge.Alias.Kind != MappingNode {
-			failWantMap()
+			failWantMap(merge)
 		}
 		d.unmarshal(merge, out)
 	case SequenceNode:
@@ -981,15 +981,15 @@ func (d *decoder) merge(parent *Node, merge *Node, out reflect.Value) {
 			ni := merge.Content[i]
 			if ni.Kind == AliasNode {
 				if ni.Alias != nil && ni.Alias.Kind != MappingNode {
-					failWantMap()
+					failWantMap(ni)
 				}
 			} else if ni.Kind != MappingNode {
-				failWantMap()
+				failWantMap(ni)
 			}
 			d.unmarshal(ni, out)
 		}
 	default:
-		failWantMap()
+		failWantMap(merge)
 	}
 
 	d.mergedFields = mergedFields
