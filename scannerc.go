@@ -2570,12 +2570,53 @@ func yaml_parser_scan_flow_scalar(parser *yaml_parser_t, token *yaml_token_t, si
 					}
 
 					// Check the value and write the character.
-					if (value >= 0xD800 && value <= 0xDFFF) || value > 0x10FFFF {
+					if (value >= 0xDC00 && value <= 0xDFFF) || value > 0x10FFFF {
 						yaml_parser_set_scanner_error(parser, "while parsing a quoted scalar",
 							start_mark, "found invalid Unicode character escape code")
 						return false
-					}
-					if value <= 0x7F {
+					} else if value >= 0xD800 && value <= 0xDBFF {
+						// Parse surrogate pairs: /u{D800-DBFF} followed by /u{DC00-DFFF}
+						high := value
+
+						// we need the 4 digits of the escape code, plus \u and the next escape code
+						if parser.unread < 10 && !yaml_parser_update_buffer(parser, 10) {
+							yaml_parser_set_scanner_error(parser, "while parsing a quoted scalar",
+								start_mark, "incomplete surrogate pair")
+							return false
+						}
+
+						// expect \u
+						if parser.buffer[parser.buffer_pos+code_length] != '\\' || parser.buffer[parser.buffer_pos+code_length+1] != 'u' {
+							yaml_parser_set_scanner_error(parser, "while parsing a quoted scalar",
+								start_mark, "expected surrogate pair to follow with \\u")
+							return false
+						}
+						skip(parser)
+						skip(parser)
+
+						// parse the second escape code into low
+						var low int
+						for k := 0; k < code_length; k++ {
+							if !is_hex(parser.buffer, parser.buffer_pos+code_length+k) {
+								yaml_parser_set_scanner_error(parser, "while parsing a quoted scalar",
+									start_mark, "did not find expected hexdecimal number")
+								return false
+							}
+							low = (low << 4) + as_hex(parser.buffer, parser.buffer_pos+code_length+k)
+						}
+						if low < 0xDC00 || low > 0xDFFF {
+							yaml_parser_set_scanner_error(parser, "while parsing a quoted scalar",
+								start_mark, "invalid low surrogate")
+							return false
+						}
+						for k := 0; k < code_length; k++ {
+							skip(parser)
+						}
+
+						result := rune(((high - 0xD800) * 0x400) + (low - 0xDC00) + 0x10000)
+
+						s = append(s, []byte(string(result))...)
+					} else if value <= 0x7F {
 						s = append(s, byte(value))
 					} else if value <= 0x7FF {
 						s = append(s, byte(0xC0+(value>>6)))
