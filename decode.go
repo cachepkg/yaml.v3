@@ -23,6 +23,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,21 @@ type parser struct {
 	anchors  map[string]*Node
 	doneInit bool
 	textless bool
+}
+
+// YAMLValue is a generic struct that holds both the typed value and the YAML Node
+type YAMLValue[T any] struct {
+	Value T
+	Node  *Node
+}
+
+// Helper function to check if a type is YAMLValue or YAMLValue[T]
+func isYAMLValueType(t reflect.Type) bool {
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+
+	return strings.Contains(t.String(), "YAMLValue")
 }
 
 func newParser(b []byte) *parser {
@@ -481,7 +497,7 @@ func allowedAliasRatio(decodeCount int) float64 {
 	}
 }
 
-func (d *decoder) unmarshal(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) unmarshal(node *Node, out reflect.Value) (good bool) {
 	d.decodeCount++
 	if d.aliasDepth > 0 {
 		d.aliasCount++
@@ -489,35 +505,80 @@ func (d *decoder) unmarshal(n *Node, out reflect.Value) (good bool) {
 	if d.aliasCount > 100 && d.decodeCount > 1000 && float64(d.aliasCount)/float64(d.decodeCount) > allowedAliasRatio(d.decodeCount) {
 		failf("document contains excessive aliasing")
 	}
-	if out.Type() == nodeType {
-		out.Set(reflect.ValueOf(n).Elem())
+
+	// Check if the out value is of YAMLValue type
+	if isYAMLValueType(out.Type()) {
+		valueField := out.FieldByName("Value")
+		nodeField := out.FieldByName("Node")
+
+		if !valueField.IsValid() || !nodeField.IsValid() {
+			failf("YAMLValue struct is missing Value or Node field")
+		}
+
+		// Create a new value to unmarshal into
+		innerValue := reflect.New(valueField.Type()).Elem()
+		good = d.unmarshal(node, innerValue)
+		if good {
+			// Set the Value and Node fields of YAMLValue
+			valueField.Set(innerValue)
+			nodeField.Set(reflect.ValueOf(node))
+			// Validate the inner value
+			errors := ValidateStruct(innerValue, node)
+			if len(errors) > 0 {
+				for _, e := range errors {
+					d.terrors = append(d.terrors, e.Error())
+				}
+				return false
+			}
+		}
+		return good
+	}
+
+	// Check if out type is *yaml.Node
+	if out.Type() == reflect.TypeOf(&Node{}) {
+		out.Set(reflect.ValueOf(node))
 		return true
 	}
-	switch n.Kind {
+
+	switch node.Kind {
 	case DocumentNode:
-		return d.document(n, out)
+		return d.document(node, out)
 	case AliasNode:
-		return d.alias(n, out)
+		return d.alias(node, out)
 	}
-	out, unmarshaled, good := d.prepare(n, out)
+
+	out, unmarshaled, good := d.prepare(node, out)
 	if unmarshaled {
 		return good
 	}
-	switch n.Kind {
+
+	switch node.Kind {
 	case ScalarNode:
-		good = d.scalar(n, out)
+		good = d.scalar(node, out)
 	case MappingNode:
-		good = d.mapping(n, out)
+		good = d.mapping(node, out)
 	case SequenceNode:
-		good = d.sequence(n, out)
+		good = d.sequence(node, out)
 	case 0:
-		if n.IsZero() {
+		if node.IsZero() {
 			return d.null(out)
 		}
 		fallthrough
 	default:
-		failf("cannot decode node with unknown kind %d", n.Kind)
+		failf("cannot decode node with unknown kind %d", node.Kind)
 	}
+
+	// Perform custom validation based on struct tags
+	if good {
+		errors := ValidateStruct(out, node)
+		if len(errors) > 0 {
+			for _, e := range errors {
+				d.terrors = append(d.terrors, e.Error())
+			}
+			return false
+		}
+	}
+
 	return good
 }
 
