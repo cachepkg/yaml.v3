@@ -18,12 +18,13 @@ package yaml_test
 import (
 	"bytes"
 	"fmt"
-	"os"
-
-	. "gopkg.in/check.v1"
-	"gopkg.in/yaml.v3"
 	"io"
+	"os"
 	"strings"
+	"testing"
+
+	"go.yaml.in/yaml/v4"
+	"go.yaml.in/yaml/v4/internal/testutil/assert"
 )
 
 var nodeTests = []struct {
@@ -45,8 +46,41 @@ var nodeTests = []struct {
 			}},
 		},
 	}, {
-		"[encode]null\n",
-		yaml.Node{},
+		"null\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.ScalarNode,
+				Tag:    "!!null",
+				Value:  "null",
+				Line:   1,
+				Column: 1,
+			}},
+		},
+	}, {
+		"[decode]\n",
+		yaml.Node{
+			Kind:   0,
+			Line:   0,
+			Column: 0,
+			Content: []*yaml.Node(nil),
+		},
+	}, {
+		"[decode]---\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.ScalarNode,
+				Tag:    "!!null",
+				Value:  "",
+				Line:   2,
+				Column: 1,
+			}},
+		},
 	}, {
 		"foo\n",
 		yaml.Node{
@@ -251,6 +285,21 @@ var nodeTests = []struct {
 			}},
 		},
 	}, {
+		"\"\\t\\n\"\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.ScalarNode,
+				Style:  yaml.DoubleQuotedStyle,
+				Value:  "\t\n",
+				Tag:    "!!str",
+				Line:   1,
+				Column: 1,
+			}},
+		},
+	}, {
 		"|\n  foo\n  bar\n",
 		yaml.Node{
 			Kind:   yaml.DocumentNode,
@@ -350,6 +399,34 @@ var nodeTests = []struct {
 			}},
 		},
 	}, {
+		"-0\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.ScalarNode,
+				Value:  "-0",
+				Tag:    "!!float",
+				Line:   1,
+				Column: 1,
+			}},
+		},
+	}, {
+		"-0.0\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.ScalarNode,
+				Value:  "-0.0",
+				Tag:    "!!float",
+				Line:   1,
+				Column: 1,
+			}},
+		},
+	}, {
 		"{}\n",
 		yaml.Node{
 			Kind:   yaml.DocumentNode,
@@ -388,6 +465,63 @@ var nodeTests = []struct {
 					Tag:    "!!str",
 					Line:   1,
 					Column: 4,
+				}},
+			}},
+		},
+	}, {
+		"\"<<\": []\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.MappingNode,
+				Value:  "",
+				Tag:    "!!map",
+				Line:   1,
+				Column: 1,
+				Content: []*yaml.Node{{
+					Kind:   yaml.ScalarNode,
+					Style:  yaml.DoubleQuotedStyle,
+					Value:  "<<",
+					Tag:    "!!str",
+					Line:   1,
+					Column: 1,
+				}, {
+					Kind:   yaml.SequenceNode,
+					Style:  yaml.FlowStyle,
+					Value:  "",
+					Tag:    "!!seq",
+					Line:   1,
+					Column: 7,
+				}},
+			}},
+		},
+	}, {
+		"foo: \"<<\"\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.MappingNode,
+				Value:  "",
+				Tag:    "!!map",
+				Line:   1,
+				Column: 1,
+				Content: []*yaml.Node{{
+					Kind:   yaml.ScalarNode,
+					Value:  "foo",
+					Tag:    "!!str",
+					Line:   1,
+					Column: 1,
+				}, {
+					Kind:   yaml.ScalarNode,
+					Style:  yaml.DoubleQuotedStyle,
+					Value:  "<<",
+					Tag:    "!!str",
+					Line:   1,
+					Column: 6,
 				}},
 			}},
 		},
@@ -493,6 +627,45 @@ var nodeTests = []struct {
 							Line:   3,
 							Column: 8,
 						}},
+					}},
+				}},
+			}},
+		},
+	}, {
+		"[decode]foo: {b?r: a?bc}\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.MappingNode,
+				Tag:    "!!map",
+				Line:   1,
+				Column: 1,
+				Content: []*yaml.Node{{
+					Kind:   yaml.ScalarNode,
+					Value:  "foo",
+					Tag:    "!!str",
+					Line:   1,
+					Column: 1,
+				}, {
+					Kind:   yaml.MappingNode,
+					Style:  yaml.FlowStyle,
+					Tag:    "!!map",
+					Line:   1,
+					Column: 6,
+					Content: []*yaml.Node{{
+						Kind:   yaml.ScalarNode,
+						Value:  "b?r",
+						Tag:    "!!str",
+						Line:   1,
+						Column: 7,
+					}, {
+						Kind:   yaml.ScalarNode,
+						Value:  "a?bc",
+						Tag:    "!!str",
+						Line:   1,
+						Column: 12,
 					}},
 				}},
 			}},
@@ -688,17 +861,17 @@ var nodeTests = []struct {
 					Line:        3,
 					Column:      4,
 				}, {
-					Kind:   yaml.ScalarNode,
-					Tag:    "!!str",
-					Value:  "c",
+					Kind:        yaml.ScalarNode,
+					Tag:         "!!str",
+					Value:       "c",
 					LineComment: "# IC",
-					Line:   5,
-					Column: 1,
+					Line:        5,
+					Column:      1,
 				}, {
-					Kind:        yaml.SequenceNode,
-					Tag:         "!!seq",
-					Line:        6,
-					Column:      3,
+					Kind:   yaml.SequenceNode,
+					Tag:    "!!seq",
+					Line:   6,
+					Column: 3,
 					Content: []*yaml.Node{{
 						Kind:   yaml.ScalarNode,
 						Tag:    "!!str",
@@ -707,17 +880,17 @@ var nodeTests = []struct {
 						Column: 5,
 					}},
 				}, {
-					Kind:   yaml.ScalarNode,
-					Tag:    "!!str",
-					Value:  "d",
+					Kind:        yaml.ScalarNode,
+					Tag:         "!!str",
+					Value:       "d",
 					LineComment: "# ID",
-					Line:   7,
-					Column: 1,
+					Line:        7,
+					Column:      1,
 				}, {
-					Kind:        yaml.MappingNode,
-					Tag:         "!!map",
-					Line:        8,
-					Column:      3,
+					Kind:   yaml.MappingNode,
+					Tag:    "!!map",
+					Line:   8,
+					Column: 3,
 					Content: []*yaml.Node{{
 						Kind:   yaml.ScalarNode,
 						Tag:    "!!str",
@@ -925,13 +1098,14 @@ var nodeTests = []struct {
 				Line:   1,
 				Column: 1,
 				Tag:    "!!map",
-				Content: []*yaml.Node{{
-					Kind:   yaml.ScalarNode,
-					Value:  "a",
-					Tag:    "!!str",
-					Line:   1,
-					Column: 1,
-				},
+				Content: []*yaml.Node{
+					{
+						Kind:   yaml.ScalarNode,
+						Value:  "a",
+						Tag:    "!!str",
+						Line:   1,
+						Column: 1,
+					},
 					saveNode("x", &yaml.Node{
 						Kind:   yaml.ScalarNode,
 						Value:  "1",
@@ -961,30 +1135,90 @@ var nodeTests = []struct {
 						Tag:    "!!str",
 						Line:   3,
 						Column: 1,
-					}, {
+					},
+					{
 						Kind:   yaml.AliasNode,
 						Value:  "x",
 						Alias:  dropNode("x"),
 						Line:   3,
 						Column: 4,
-					}, {
+					},
+					{
 						Kind:   yaml.ScalarNode,
 						Value:  "d",
 						Tag:    "!!str",
 						Line:   4,
 						Column: 1,
-					}, {
+					},
+					{
 						Kind:   yaml.AliasNode,
 						Value:  "y",
 						Tag:    "",
 						Alias:  dropNode("y"),
 						Line:   4,
 						Column: 4,
-					}},
+					},
+				},
 			}},
 		},
 	}, {
-
+		"a: &anchor(.!@#$%^&*+=?:;)name [1, 2]\nb: *anchor(.!@#$%^&*+=?:;)name\n",
+		yaml.Node{
+			Kind:   yaml.DocumentNode,
+			Line:   1,
+			Column: 1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.MappingNode,
+				Line:   1,
+				Column: 1,
+				Tag:    "!!map",
+				Content: []*yaml.Node{
+					{
+						Kind:   yaml.ScalarNode,
+						Value:  "a",
+						Tag:    "!!str",
+						Line:   1,
+						Column: 1,
+					},
+					saveNode("anchor(.!@#$%^&*+=?:;)name", &yaml.Node{
+						Kind:   yaml.SequenceNode,
+						Style:  yaml.FlowStyle,
+						Tag:    "!!seq",
+						Anchor: "anchor(.!@#$%^&*+=?:;)name",
+						Line:   1,
+						Column: 4,
+						Content: []*yaml.Node{{
+							Kind:   yaml.ScalarNode,
+							Value:  "1",
+							Tag:    "!!int",
+							Line:   1,
+							Column: 33,
+						}, {
+							Kind:   yaml.ScalarNode,
+							Value:  "2",
+							Tag:    "!!int",
+							Line:   1,
+							Column: 36,
+						}},
+					}),
+					{
+						Kind:   yaml.ScalarNode,
+						Value:  "b",
+						Tag:    "!!str",
+						Line:   2,
+						Column: 1,
+					},
+					{
+						Kind:   yaml.AliasNode,
+						Value:  "anchor(.!@#$%^&*+=?:;)name",
+						Alias:  dropNode("anchor(.!@#$%^&*+=?:;)name"),
+						Line:   2,
+						Column: 4,
+					},
+				},
+			}},
+		},
+	}, {
 		"# One\n# Two\ntrue # Three\n# Four\n# Five\n",
 		yaml.Node{
 			Kind:   yaml.DocumentNode,
@@ -1002,7 +1236,6 @@ var nodeTests = []struct {
 			}},
 		},
 	}, {
-
 		"# š\ntrue # š\n",
 		yaml.Node{
 			Kind:   yaml.DocumentNode,
@@ -1019,7 +1252,6 @@ var nodeTests = []struct {
 			}},
 		},
 	}, {
-
 		"[decode]\n# One\n\n# Two\n\n# Three\ntrue # Four\n# Five\n\n# Six\n\n# Seven\n",
 		yaml.Node{
 			Kind:        yaml.DocumentNode,
@@ -2550,19 +2782,71 @@ var nodeTests = []struct {
 				},
 			}},
 		},
+	}, {
+		"# foo\n",
+		yaml.Node{
+			Kind:        yaml.DocumentNode,
+			Line:        2,
+			Column:      1,
+			HeadComment: "# foo",
+			Content: []*yaml.Node(nil),
+		},
+	}, {
+		"# beginning\na:\n  ## foo\n  ##\n  b:\n",
+		yaml.Node{
+			Kind:        yaml.DocumentNode,
+			Line:        2,
+			Column:      1,
+			Content: []*yaml.Node{{
+				Kind:   yaml.MappingNode,
+				Tag:    "!!map",
+				Line:   2,
+				Column: 1,
+				Content: []*yaml.Node{
+					{
+						Kind:        yaml.ScalarNode,
+						Tag:         "!!str",
+						Line:        2,
+						Column:      1,
+						Value:       "a",
+						HeadComment: "# beginning",
+					}, {
+						Kind:        yaml.MappingNode,
+						Tag:         "!!map",
+						Line:        5,
+						Column:      3,
+						Content: []*yaml.Node{
+							{
+								Kind:        yaml.ScalarNode,
+								Tag:         "!!str",
+								Line:        5,
+								Column:      3,
+								Value:       "b",
+								HeadComment: "## foo\n##",
+							}, {
+								Kind:        yaml.ScalarNode,
+								Tag:         "!!null",
+								Line:        5,
+								Column:      5,
+							},
+						},
+					},
+				},
+			}},
+		},
 	},
 }
 
-func (s *S) TestNodeRoundtrip(c *C) {
+func TestNodeRoundtrip(t *testing.T) {
 	defer os.Setenv("TZ", os.Getenv("TZ"))
 	os.Setenv("TZ", "UTC")
 	for i, item := range nodeTests {
-		c.Logf("test %d: %q", i, item.yaml)
+		t.Logf("test %d: %q", i, item.yaml)
 
 		if strings.Contains(item.yaml, "#") {
 			var buf bytes.Buffer
 			fprintComments(&buf, &item.node, "    ")
-			c.Logf("  expected comments:\n%s", buf.Bytes())
+			t.Logf("  expected comments:\n%s", buf.Bytes())
 		}
 
 		decode := true
@@ -2581,13 +2865,13 @@ func (s *S) TestNodeRoundtrip(c *C) {
 		if decode {
 			var node yaml.Node
 			err := yaml.Unmarshal([]byte(testYaml), &node)
-			c.Assert(err, IsNil)
+			assert.NoError(t, err)
 			if strings.Contains(item.yaml, "#") {
 				var buf bytes.Buffer
 				fprintComments(&buf, &node, "    ")
-				c.Logf("  obtained comments:\n%s", buf.Bytes())
+				t.Logf("  obtained comments:\n%s", buf.Bytes())
 			}
-			c.Assert(&node, DeepEquals, &item.node)
+			assert.DeepEqual(t, &item.node, &node)
 		}
 		if encode {
 			node := deepCopyNode(&item.node, nil)
@@ -2595,13 +2879,13 @@ func (s *S) TestNodeRoundtrip(c *C) {
 			enc := yaml.NewEncoder(&buf)
 			enc.SetIndent(2)
 			err := enc.Encode(node)
-			c.Assert(err, IsNil)
+			assert.NoError(t, err)
 			err = enc.Close()
-			c.Assert(err, IsNil)
-			c.Assert(buf.String(), Equals, testYaml)
+			assert.NoError(t, err)
+			assert.Equal(t, buf.String(), testYaml)
 
 			// Ensure there were no mutations to the tree.
-			c.Assert(node, DeepEquals, &item.node)
+			assert.DeepEqual(t, &item.node, node)
 		}
 	}
 }
@@ -2700,40 +2984,40 @@ var setStringTests = []struct {
 	},
 }
 
-func (s *S) TestSetString(c *C) {
+func TestSetString(t *testing.T) {
 	defer os.Setenv("TZ", os.Getenv("TZ"))
 	os.Setenv("TZ", "UTC")
 	for i, item := range setStringTests {
-		c.Logf("test %d: %q", i, item.str)
+		t.Logf("test %d: %q", i, item.str)
 
 		var node yaml.Node
 
 		node.SetString(item.str)
 
-		c.Assert(node, DeepEquals, item.node)
+		assert.DeepEqual(t, item.node, node)
 
 		buf := bytes.Buffer{}
 		enc := yaml.NewEncoder(&buf)
 		enc.SetIndent(2)
 		err := enc.Encode(&item.node)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 		err = enc.Close()
-		c.Assert(err, IsNil)
-		c.Assert(buf.String(), Equals, item.yaml)
+		assert.NoError(t, err)
+		assert.Equal(t, item.yaml, buf.String())
 
 		var doc yaml.Node
 		err = yaml.Unmarshal([]byte(item.yaml), &doc)
-		c.Assert(err, IsNil)
+		assert.NoError(t, err)
 
 		var str string
 		err = node.Decode(&str)
-		c.Assert(err, IsNil)
-		c.Assert(str, Equals, item.str)
+		assert.NoError(t, err)
+		assert.Equal(t, item.str, str)
 	}
 }
 
 var nodeEncodeDecodeTests = []struct {
-	value interface{}
+	value any
 	yaml  string
 	node  yaml.Node
 }{{
@@ -2762,7 +3046,7 @@ var nodeEncodeDecodeTests = []struct {
 		Tag:   "!!int",
 	},
 }, {
-	[]interface{}{1, 2},
+	[]any{1, 2},
 	"[1, 2]",
 	yaml.Node{
 		Kind: yaml.SequenceNode,
@@ -2778,7 +3062,7 @@ var nodeEncodeDecodeTests = []struct {
 		}},
 	},
 }, {
-	map[string]interface{}{"a": "b"},
+	map[string]any{"a": "b"},
 	"a: b",
 	yaml.Node{
 		Kind: yaml.MappingNode,
@@ -2795,57 +3079,59 @@ var nodeEncodeDecodeTests = []struct {
 	},
 }}
 
-func (s *S) TestNodeEncodeDecode(c *C) {
+func TestNodeEncodeDecode(t *testing.T) {
 	for i, item := range nodeEncodeDecodeTests {
-		c.Logf("Encode/Decode test value #%d: %#v", i, item.value)
+		t.Logf("Encode/Decode test value #%d: %#v", i, item.value)
 
-		var v interface{}
+		var v any
 		err := item.node.Decode(&v)
-		c.Assert(err, IsNil)
-		c.Assert(v, DeepEquals, item.value)
+		assert.NoError(t, err)
+		assert.DeepEqual(t, item.value, v)
 
 		var n yaml.Node
 		err = n.Encode(item.value)
-		c.Assert(err, IsNil)
-		c.Assert(n, DeepEquals, item.node)
+		assert.NoError(t, err)
+		assert.DeepEqual(t, item.node, n)
 	}
 }
 
-func (s *S) TestNodeZeroEncodeDecode(c *C) {
+func TestNodeZeroEncodeDecode(t *testing.T) {
 	// Zero node value behaves as nil when encoding...
 	var n yaml.Node
 	data, err := yaml.Marshal(&n)
-	c.Assert(err, IsNil)
-	c.Assert(string(data), Equals, "null\n")
+	assert.NoError(t, err)
+	assert.Equal(t, "null\n", string(data))
 
 	// ... and decoding.
 	var v *struct{} = &struct{}{}
-	c.Assert(n.Decode(&v), IsNil)
-	c.Assert(v, IsNil)
+	err = n.Decode(&v)
+	assert.NoError(t, err)
+	assert.IsNil(t, v)
 
 	// ... and even when looking for its tag.
-	c.Assert(n.ShortTag(), Equals, "!!null")
+	assert.Equal(t, "!!null", n.ShortTag())
 
 	// Kind zero is still unknown, though.
 	n.Line = 1
 	_, err = yaml.Marshal(&n)
-	c.Assert(err, ErrorMatches, "yaml: cannot encode node with unknown kind 0")
-	c.Assert(n.Decode(&v), ErrorMatches, "yaml: cannot decode node with unknown kind 0")
+	assert.ErrorMatches(t, "yaml: cannot encode node with unknown kind 0", err)
+	err = n.Decode(&v)
+	assert.ErrorMatches(t, "yaml: cannot decode node with unknown kind 0", err)
 }
 
-func (s *S) TestNodeOmitEmpty(c *C) {
+func TestNodeOmitEmpty(t *testing.T) {
 	var v struct {
 		A int
-		B yaml.Node ",omitempty"
+		B yaml.Node `yaml:",omitempty"`
 	}
 	v.A = 1
 	data, err := yaml.Marshal(&v)
-	c.Assert(err, IsNil)
-	c.Assert(string(data), Equals, "a: 1\n")
+	assert.NoError(t, err)
+	assert.Equal(t, "a: 1\n", string(data))
 
 	v.B.Line = 1
 	_, err = yaml.Marshal(&v)
-	c.Assert(err, ErrorMatches, "yaml: cannot encode node with unknown kind 0")
+	assert.ErrorMatches(t, "yaml: cannot encode node with unknown kind 0", err)
 }
 
 func fprintComments(out io.Writer, node *yaml.Node, indent string) {
